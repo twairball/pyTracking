@@ -1,6 +1,7 @@
 """
 Bounding Box util functions
 """
+import numpy as np
 
 def scale_box(box, image):
     x1, y1, x2, y2 = box
@@ -65,3 +66,10 @@ def get_intersect(box1, box2):
         return [0, 0, 0, 0] # no intersect
     
     return [x1, y1, x2, y2]
+
+
+def normalize_box(box, image_shape):
+    (H, W) = image_shape
+    return np.array(box) / np.array([W, H, W, H]).astype(np.float)
+
+
