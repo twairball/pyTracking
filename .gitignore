@@ -106,6 +106,10 @@ venv.bak/
 
 # temp data
 data/
+tmp/
 
 # notebooks
 *.ipynb
+
+# mac osx
+**.DS_Store

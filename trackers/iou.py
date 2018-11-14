@@ -1,6 +1,5 @@
-import uuid
 from .box_utils import calc_iou
-from .base import BaseTracker, create_track, update_track
+from .base import BaseTracker, update_track
 
 
 class IOUTracker(BaseTracker):
@@ -37,6 +36,8 @@ class IOUTracker(BaseTracker):
         self.frame_counter = 0
 
     def track(self, detections):
+        """TODO: 
+        """
         updated_tracks = []
         new_tracks = []
 
