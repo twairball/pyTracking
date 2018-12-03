@@ -1,28 +1,11 @@
 from filterpy.kalman import KalmanFilter
 import numpy as np
 
-from numba import jit
 
 from .linear_assignment_ import linear_assignment
 
 from .box_utils import calc_iou
-from .base import BaseTracker
-
-@jit
-def iou(bb_test,bb_gt):
-  """
-  Computes IUO between two bboxes in the form [x1,y1,x2,y2]
-  """
-  xx1 = np.maximum(bb_test[0], bb_gt[0])
-  yy1 = np.maximum(bb_test[1], bb_gt[1])
-  xx2 = np.minimum(bb_test[2], bb_gt[2])
-  yy2 = np.minimum(bb_test[3], bb_gt[3])
-  w = np.maximum(0., xx2 - xx1)
-  h = np.maximum(0., yy2 - yy1)
-  wh = w * h
-  o = wh / ((bb_test[2]-bb_test[0])*(bb_test[3]-bb_test[1])
-    + (bb_gt[2]-bb_gt[0])*(bb_gt[3]-bb_gt[1]) - wh)
-  return(o)
+from .base import Tracker, Track
 
 
 def convert_bbox_to_z(bbox):
@@ -54,15 +37,16 @@ def convert_x_to_bbox(x,score=None):
 
 # TODO:
 # this is a single track
-class KalmanBoxTracker(object):
+class KalmanTrack(Track):
     """
     This class represents the internel state of individual tracked objects observed as bbox.
     """
-    count = 0
-    def __init__(self,bbox):
+    # count = 0
+    def __init__(self,det):
         """
         Initialises a tracker using initial bounding box.
         """
+        super(KalmanTrack, self).__init__(det)
         #define constant velocity model
         self.kf = KalmanFilter(dim_x=7, dim_z=4)
         self.kf.F = np.array([[1,0,0,0,1,0,0],[0,1,0,0,0,1,0],[0,0,1,0,0,0,1],[0,0,0,1,0,0,0],  [0,0,0,0,1,0,0],[0,0,0,0,0,1,0],[0,0,0,0,0,0,1]])
@@ -74,24 +58,30 @@ class KalmanBoxTracker(object):
         self.kf.Q[-1,-1] *= 0.01
         self.kf.Q[4:,4:] *= 0.01
 
-        self.kf.x[:4] = convert_bbox_to_z(bbox)
+        self.kf.x[:4] = convert_bbox_to_z(det.get_box_xyxy())
         self.time_since_update = 0
-        self.id = KalmanBoxTracker.count
-        KalmanBoxTracker.count += 1
+
+        # deprecated in favor of self.track_id
+        #
+        # self.id = KalmanBoxTracker.count
+        # KalmanBoxTracker.count += 1
+
         self.history = []
         self.hits = 0
         self.hit_streak = 0
         self.age = 0
 
-    def update(self,bbox):
+    def update(self,det):
         """
-        Updates the state vector with observed bbox.
+        Updates the state vector with observed box.
         """
+        super(KalmanTrack, self).update(det)
         self.time_since_update = 0
         self.history = []
         self.hits += 1
         self.hit_streak += 1
-        self.kf.update(convert_bbox_to_z(bbox))
+        self.kf.update(convert_bbox_to_z(self.box))
+        # self.kf.update(convert_bbox_to_z(bbox))
 
     def predict(self):
         """
@@ -126,8 +116,7 @@ def associate_detections_to_trackers(detections,trackers,iou_threshold = 0.3):
 
     for d,det in enumerate(detections):
         for t,trk in enumerate(trackers):
-            iou_matrix[d,t] = iou(det,trk)
-            # iou_matrix[d, t] = calc_iou(det[0:4], trk[0:4])
+            iou_matrix[d,t] = calc_iou(det[0:4],trk[0:4])
     matched_indices = linear_assignment(-iou_matrix)
 
     unmatched_detections = []
@@ -166,11 +155,56 @@ class SortTracker(Tracker):
         """
         self.max_age = max_age
         self.min_hits = min_hits
-        self.trackers = []
+        self.tracks = []
+        # self.trackers = []
         self.frame_count = 0
-    
-    def get_tracks(self):
-        [p.predict()[0] for p in predict]
+
+    def track(self, detections):
+        self.frame_count += 1
+        tracks = self.get_tracks()
+        results = []
+
+        predicted_pos = np.asarray([t.predict()[0] for t in tracks])
+        predicted_pos = np.reshape(predicted_pos, [len(tracks), 4])
+        predicted_pos = np.ma.compress_rows(np.ma.masked_invalid(predicted_pos))
+        det_pos = np.asarray([d.get_box_xyxy() for d in detections])
+
+        # remove tracks that have nan predictions
+        invalid_pos = np.any(np.isnan(predicted_pos), axis=1)
+        if len(invalid_pos) > 0:
+            tracks = tracks[~invalid_pos]
+
+        matched, unmatched_dets, unmatched_trks = associate_detections_to_trackers(
+            det_pos, predicted_pos)
+
+        # update matched trackers with assigned detections
+        for t, track in enumerate(tracks):
+            if(t not in unmatched_trks):
+                d = matched[np.where(matched[:, 1] == t)[0], 0]
+                track.update(detections[d])
+
+        # create and initialise new trackers for unmatched detections
+        for i in unmatched_dets:
+            track = KalmanTrack(detections[i])
+            tracks.append(track)
+        
+        i = len(tracks)
+        for t in reversed(tracks):
+            d = track.get_state()[0]
+            if((t.time_since_update < 1) and (t.hit_streak >= self.min_hits or self.frame_count <= self.min_hits)):
+                # +1 as MOT benchmark requires positive
+                results.append(np.concatenate((d, [t.track_id])).reshape(1, -1))
+            i -= 1
+            #remove dead tracklet
+            if(t.time_since_update > self.max_age):
+                # TODO: finished tracks
+                tracks.pop(i)
+        
+        if len(results) > 0:
+            return np.asarray(results)
+        return np.empty((0,5))
+
+
 
     def update(self, dets):
         """

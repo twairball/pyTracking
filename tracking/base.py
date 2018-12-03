@@ -87,19 +87,14 @@ class Tracker():
     """ Multi-target tracker """
 
     def __init__(self):
-        self.tracks_active = []
-        self.tracks_finished = []
+        self.tracks = []
 
     def track(self, detections):
         return NotImplementedError
 
-    def get_tracks(self):
-        """Return list of valid tracks, including finished and active tracks"""
-        return NotImplementedError
-
-    def create_track(self, det):
-        """Create and add a track for a detection result"""
-        return NotImplementedError
+    # def create_track(self, det):
+    #     """Create and add a track for a detection result"""
+    #     return NotImplementedError
 
     def get_tracks(self):
         """Returns new or active tacks"""
