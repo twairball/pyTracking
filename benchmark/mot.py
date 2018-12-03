@@ -3,7 +3,6 @@ import os
 import configparser
 import csv
 
-
 def get_sequences(data_dir="./data/mot17/train"):
     sequences = os.listdir(data_dir)
     if '.DS_Store' in sequences:
@@ -33,12 +32,12 @@ def get_image_shape(seq, train_dir):
     return image_shape
 
 
-def mot_to_det(mot_detection):
+def mot_to_dict(mot_detection):
     """Return detection result as dict.
     Args:
         mot_detection: [x, y, w, h, score] in np.array
     Returns:
-        detection: dict with keys:
+        detection object
             box: [x1, y1, x2, y2] 
             score: float
     """

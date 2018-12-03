@@ -52,6 +52,8 @@ def convert_x_to_bbox(x,score=None):
         return np.array([x[0]-w/2.,x[1]-h/2.,x[0]+w/2.,x[1]+h/2.,score]).reshape((1,5))
 
 
+# TODO:
+# this is a single track
 class KalmanBoxTracker(object):
     """
     This class represents the internel state of individual tracked objects observed as bbox.
@@ -154,7 +156,7 @@ def associate_detections_to_trackers(detections,trackers,iou_threshold = 0.3):
 
 
 
-class SortTracker(BaseTracker):
+class SortTracker(Tracker):
     """
     """
 

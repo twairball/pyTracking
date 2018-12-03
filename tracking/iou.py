@@ -1,8 +1,26 @@
 from .box_utils import calc_iou
-from .base import BaseTracker, update_track
+from .base import Tracker, Track
+
+import logging
+logger = logging.getLogger()
+
+class MaxScoreTrack(Track):
+    """Single box tracker, maintains max score"""
+
+    def __init__(self, det):
+        """
+        Args:
+            det: Detection object
+        """
+        super(MaxScoreTrack, self).__init__(det)
+        self.max_score = self.score
+
+    def update(self, det):
+        super(MaxScoreTrack, self).update(det)
+        self.max_score = max(self.score, det.score)
 
 
-class IOUTracker(BaseTracker):
+class IOUTracker(Tracker):
     """IOU based tracker
     High-Speed Tracking-by-Detection Without Using Image Information by E. Bochinski, V. Eiselein, T. Sikora
     http://elvera.nue.tu-berlin.de/files/1517Bochinski2017.pdf
@@ -23,65 +41,49 @@ class IOUTracker(BaseTracker):
             sigma_l: Threshold [-1, 1.] for detections. 
             sigma_h: Threshold [-1, 1.] for finished tracks. 
             sigma_iou: Threshold for track matching.
-            t_min: minimum frames for finishing tracks. 
-        Returns:
-            tracks_active: List of active tracks. 
+            t_min: minimum frames for marking active tracks
         """
         self.sigma_l = sigma_l
-        self.sigma_h = sigma_h
+        self.sigma_h = sigma_h # TODO: deprecated
         self.sigma_iou = sigma_iou
         self.t_min = t_min
-        self.tracks_active = []
-        self.tracks_finished = []
-        self.frame_counter = 0
+        self.tracks = []
 
     def track(self, detections):
-        """TODO: 
-        """
-        updated_tracks = []
-        new_tracks = []
+        next_tracks = []
 
         # filter detections below threshold
-        dets = [det for det in detections if det['score'] >= self.sigma_l]
+        dets = [det for det in detections if det.score >= self.sigma_l]
 
-        for track in self.tracks_active:
+        # get new or active tracks
+        tracks = self.get_tracks()
+
+        for track in tracks:
             if len(dets) > 0:
                 # get det with highest iou
                 ind, best_match = max(
-                    enumerate(dets), key=lambda x: calc_iou(track['box'], x[1]['box']))
+                    enumerate(dets), key=lambda x: calc_iou(track.box, x[1].box))
 
-                if calc_iou(track['box'], best_match['box']) >= self.sigma_iou:
-                    print('track: ', track['box'], ', best_match:', best_match['box'], 'iou: ', calc_iou(
-                        track['box'], best_match['box']))
-
-                    # TODO:
-                    # track['bboxes'].append(best_match['bbox'])
-                    track = update_track(track, best_match)
-                    updated_tracks.append(track)
+                if calc_iou(track.box, best_match.box) >= self.sigma_iou:
+                    logger.info("track: %s, best_match: %s, iou: %s" % (track.box, best_match.box, calc_iou(track.box, best_match.box)))
+                    track.update(best_match)
+                    if track.frames >= self.t_min:
+                        track.active()
                     del dets[ind]
 
-            # if track was not updated
-            if len(updated_tracks) == 0 or track is not updated_tracks[-1]:
-                # finish track when the conditions are met
-                if track['max_score'] >= self.sigma_h and track['frames'] >= self.t_min:
-                    track['active'] = 0  # deactivate
-                    self.tracks_finished.append(track)
-                    print("finished track: ", track)
+            # mark finished if track was not updated
+            if track not in next_tracks:
+                track.finish()
+                logger.info("finished track: ", track)
+
+            # add to list
+            next_tracks.append(track)
 
         if len(dets) > 0:
-            print("create new tracks: ", len(dets))
+            logger.info("create new tracks: ", len(dets))
             # create new tracks
-            new_tracks = [self.create_track(det) for det in dets]
+            next_tracks += [MaxScoreTrack(det) for det in dets]
+            
+        self.tracks = next_tracks
+        return self.tracks
 
-        self.tracks_active = updated_tracks + new_tracks
-
-        # update counter
-        self.frame_counter += 1
-        return self.tracks_active
-
-    def get_tracks(self):
-        tracks = self.tracks_finished
-        # finish remaining active tracks
-        tracks += [track for track in self.tracks_active
-                   if track['max_score'] >= self.sigma_h and track['frames'] >= self.t_min]
-        return tracks
