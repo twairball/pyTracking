@@ -1,3 +1,5 @@
+import numpy as np
+
 from .box_utils import calc_iou
 from .base import Tracker, Track
 
@@ -68,20 +70,20 @@ class IOUTracker(Tracker):
                     track.update(best_match)
                     if track.frames >= self.t_min:
                         track.active()
+                    
+                    next_tracks.append(track)
                     del dets[ind]
 
-            # mark finished if track was not updated
             if track not in next_tracks:
                 track.finish()
+                next_tracks.append(track)
                 logger.info("finished track: ", track)
-
-            # add to list
-            next_tracks.append(track)
 
         if len(dets) > 0:
             logger.info("create new tracks: ", len(dets))
             # create new tracks
-            next_tracks += [MaxScoreTrack(det) for det in dets]
+            new_tracks = [MaxScoreTrack(det) for det in dets]
+            next_tracks = np.append(next_tracks, new_tracks)
             
         self.tracks = next_tracks
         return self.tracks

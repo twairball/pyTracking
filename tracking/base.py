@@ -92,34 +92,8 @@ class Tracker():
     def track(self, detections):
         return NotImplementedError
 
-    # def create_track(self, det):
-    #     """Create and add a track for a detection result"""
-    #     return NotImplementedError
-
     def get_tracks(self):
         """Returns new or active tacks"""
         tracks = [track for track in self.tracks if not track.is_finished()]
+        tracks = np.asarray(tracks)
         return tracks
-        
-# def create_track(detect_result):
-#     return {
-#         'box': detect_result['box'],
-#         'max_score': detect_result['score'],
-#         'score': detect_result['score'],
-#         'class_id': detect_result['class_id'],
-#         'track_id': uuid.uuid4().hex[:6],
-#         'frames': 1,
-#         'active': 1
-#     }
-
-
-# def update_track(track, detect_result):
-#     return {
-#         'box': detect_result['box'],
-#         'max_score': max(track['max_score'], detect_result['score']),
-#         'score': detect_result['score'],
-#         'class_id': detect_result['class_id'],
-#         'track_id': track['track_id'],
-#         'frames': track['frames'] + 1,
-#         'active': 1
-#     }

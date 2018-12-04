@@ -180,7 +180,6 @@ class SortTracker(Tracker):
         """
         self.frame_count += 1
         tracks = self.get_tracks()
-        results = []
 
         predicted_pos = np.asarray([t.predict()[0] for t in tracks])
         predicted_pos = np.reshape(predicted_pos, [len(tracks), 4])
@@ -198,13 +197,13 @@ class SortTracker(Tracker):
         # update matched trackers with assigned detections
         for t, track in enumerate(tracks):
             if(t not in unmatched_trks):
-                d = matched[np.where(matched[:, 1] == t)[0], 0]
+                d = matched[np.where(matched[:, 1] == t)[0], 0][0]
                 track.update(detections[d])
 
         # create and initialise new trackers for unmatched detections
         for i in unmatched_dets:
             track = KalmanTrack(detections[i])
-            tracks.append(track)
+            tracks = np.append(tracks, [track])
         
         for t in tracks:
             d = track.get_state()[0]
