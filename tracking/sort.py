@@ -40,6 +40,9 @@ def convert_x_to_bbox(x,score=None):
 class KalmanTrack(Track):
     """
     This class represents the internel state of individual tracked objects observed as bbox.
+
+    Code originally from https://github.com/abewley/sort, modified by Jerry Liu 2018. 
+
     """
     # count = 0
     def __init__(self,det):
@@ -60,11 +63,6 @@ class KalmanTrack(Track):
 
         self.kf.x[:4] = convert_bbox_to_z(det.get_box_xyxy())
         self.time_since_update = 0
-
-        # deprecated in favor of self.track_id
-        #
-        # self.id = KalmanBoxTracker.count
-        # KalmanBoxTracker.count += 1
 
         self.history = []
         self.hits = 0
@@ -104,18 +102,26 @@ class KalmanTrack(Track):
         return convert_x_to_bbox(self.kf.x)
 
 
-def associate_detections_to_trackers(detections,trackers,iou_threshold = 0.3):
+def associate_detections_to_tracks(detections, tracks, iou_threshold = 0.3):
     """
     Assigns detections to tracked object (both represented as bounding boxes)
 
-    Returns 3 lists of matches, unmatched_detections and unmatched_trackers
+    Args:
+        detections: list of Detection objects
+        tracks: list of Track objects
+        iou_threshold: minimum iou score threshold for matching criteria. 
+    Returns:    
+        Returns 3 lists of matches, unmatched_detections and unmatched_tracks. 
+
+    Code from https://github.com/abewley/sort
+
     """
-    if(len(trackers)==0):
+    if(len(tracks)==0):
         return np.empty((0,2),dtype=int), np.arange(len(detections)), np.empty((0,5),dtype=int)
-    iou_matrix = np.zeros((len(detections),len(trackers)),dtype=np.float32)
+    iou_matrix = np.zeros((len(detections),len(tracks)),dtype=np.float32)
 
     for d,det in enumerate(detections):
-        for t,trk in enumerate(trackers):
+        for t,trk in enumerate(tracks):
             iou_matrix[d,t] = calc_iou(det[0:4],trk[0:4])
     matched_indices = linear_assignment(-iou_matrix)
 
@@ -123,17 +129,17 @@ def associate_detections_to_trackers(detections,trackers,iou_threshold = 0.3):
     for d,det in enumerate(detections):
         if(d not in matched_indices[:,0]):
             unmatched_detections.append(d)
-    unmatched_trackers = []
-    for t,trk in enumerate(trackers):
+    unmatched_tracks = []
+    for t,trk in enumerate(tracks):
         if(t not in matched_indices[:,1]):
-            unmatched_trackers.append(t)
+            unmatched_tracks.append(t)
 
     #filter out matched with low IOU
     matches = []
     for m in matched_indices:
         if(iou_matrix[m[0],m[1]]<iou_threshold):
             unmatched_detections.append(m[0])
-            unmatched_trackers.append(m[1])
+            unmatched_tracks.append(m[1])
         else:
             matches.append(m.reshape(1,2))
     if(len(matches)==0):
@@ -141,25 +147,37 @@ def associate_detections_to_trackers(detections,trackers,iou_threshold = 0.3):
     else:
         matches = np.concatenate(matches,axis=0)
 
-    return matches, np.array(unmatched_detections), np.array(unmatched_trackers)
+    return matches, np.array(unmatched_detections), np.array(unmatched_tracks)
 
 
 
 class SortTracker(Tracker):
-    """
+    """SORT based tracker. 
+    Simple online and real-time tracking by Bewley, et al. 
+    http://arxiv.org/abs/1602.00763
+    
+    Code originally from https://github.com/abewley/sort, modified by Jerry Liu
+    
     """
 
     def __init__(self,max_age=1,min_hits=3):
-        """
-        Sets key parameters for SORT
+        """Initialize SORT tracker. 
+        Args:
+            max_age: int, number of frames before finishing tracks
+            min_hits: int, number of frames before activating tracks
         """
         self.max_age = max_age
         self.min_hits = min_hits
         self.tracks = []
-        # self.trackers = []
         self.frame_count = 0
 
     def track(self, detections):
+        """Update tracks for detections. 
+        Args:
+            detections: list of Detection objects
+        Returns:
+            list of all tracks
+        """
         self.frame_count += 1
         tracks = self.get_tracks()
         results = []
@@ -174,7 +192,7 @@ class SortTracker(Tracker):
         if len(invalid_pos) > 0:
             tracks = tracks[~invalid_pos]
 
-        matched, unmatched_dets, unmatched_trks = associate_detections_to_trackers(
+        matched, unmatched_dets, unmatched_trks = associate_detections_to_tracks(
             det_pos, predicted_pos)
 
         # update matched trackers with assigned detections
@@ -188,70 +206,12 @@ class SortTracker(Tracker):
             track = KalmanTrack(detections[i])
             tracks.append(track)
         
-        i = len(tracks)
-        for t in reversed(tracks):
+        for t in tracks:
             d = track.get_state()[0]
             if((t.time_since_update < 1) and (t.hit_streak >= self.min_hits or self.frame_count <= self.min_hits)):
-                # +1 as MOT benchmark requires positive
-                results.append(np.concatenate((d, [t.track_id])).reshape(1, -1))
-            i -= 1
-            #remove dead tracklet
+                t.active()
             if(t.time_since_update > self.max_age):
-                # TODO: finished tracks
-                tracks.pop(i)
-        
-        if len(results) > 0:
-            return np.asarray(results)
-        return np.empty((0,5))
+                t.finish()
 
-
-
-    def update(self, dets):
-        """
-        Params:
-        dets - a numpy array of detections in the format [[x1,y1,x2,y2,score],[x1,y1,x2,y2,score],...]
-        Requires: this method must be called once for each frame even with empty detections.
-        Returns the a similar array, where the last column is the object ID.
-
-        NOTE: The number of objects returned may differ from the number of detections provided.
-        """
-        self.frame_count += 1
-        #get predicted locations from existing trackers.
-        trks = np.zeros((len(self.trackers), 5))
-        to_del = []
-        ret = []
-        for t, trk in enumerate(trks):
-            pos = self.trackers[t].predict()[0]
-            trk[:] = [pos[0], pos[1], pos[2], pos[3], 0]
-            if(np.any(np.isnan(pos))):
-                to_del.append(t)
-        trks = np.ma.compress_rows(np.ma.masked_invalid(trks))
-        for t in reversed(to_del):
-            self.trackers.pop(t)
-        matched, unmatched_dets, unmatched_trks = associate_detections_to_trackers(
-            dets, trks)
-
-        #update matched trackers with assigned detections
-        for t, trk in enumerate(self.trackers):
-            if(t not in unmatched_trks):
-                d = matched[np.where(matched[:, 1] == t)[0], 0]
-                trk.update(dets[d, :][0])
-
-        #create and initialise new trackers for unmatched detections
-        for i in unmatched_dets:
-            trk = KalmanBoxTracker(dets[i, :])
-            self.trackers.append(trk)
-        i = len(self.trackers)
-        for trk in reversed(self.trackers):
-            d = trk.get_state()[0]
-            if((trk.time_since_update < 1) and (trk.hit_streak >= self.min_hits or self.frame_count <= self.min_hits)):
-                # +1 as MOT benchmark requires positive
-                ret.append(np.concatenate((d, [trk.id+1])).reshape(1, -1))
-            i -= 1
-            #remove dead tracklet
-            if(trk.time_since_update > self.max_age):
-                # TODO: finished tracks
-                self.trackers.pop(i)
-        if(len(ret) > 0):
-            return np.concatenate(ret)
-        return np.empty((0, 5))
+        self.tracks = tracks
+        return self.tracks

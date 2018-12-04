@@ -7,7 +7,10 @@ from numba import jit
 
 @jit
 def calc_iou(box1, box2):
-    """Calculate Intersection over Union between 2 boxes. 
+    """Calculate Intersection over Union between 2 boxes.
+
+    Code originally from https://github.com/abewley/sort, modified by Jerry Liu 2018. 
+
     Args:
         box1: [x1, y1, x2, y2]
         box2: [x1, y1, x2, y2]

@@ -23,16 +23,9 @@ class MaxScoreTrack(Track):
 class IOUTracker(Tracker):
     """IOU based tracker
     High-Speed Tracking-by-Detection Without Using Image Information by E. Bochinski, V. Eiselein, T. Sikora
-    http://elvera.nue.tu-berlin.de/files/1517Bochinski2017.pdf
+    http://elvera.nue.tu-berlin.de/files/1517Bochinski2017.pdf. 
 
-    track is a dict with keys:
-        boxes:     list of box [x1, y1, x2, y2]
-        max_score: float, max confidence tracker has seen. 
-        score:     float, detector confidence.
-        class_id:  int, unique id for object detection class. 
-        track_id:  str, UUID for tracker.
-        frames:    int, number of frames tracker active. 
-        active:    int, denotes if tracker is still active. 
+    Code originally from https://github.com/bochinski/iou-tracker, modified by Jerry Liu. 
     """
 
     def __init__(self, sigma_l=0.0, sigma_h=0.5, sigma_iou=0.3, t_min=3):
@@ -50,6 +43,12 @@ class IOUTracker(Tracker):
         self.tracks = []
 
     def track(self, detections):
+        """Update tracks for detections. 
+        Args:
+            detections: list of Detection objects
+        Returns:
+            list of all tracks
+        """
         next_tracks = []
 
         # filter detections below threshold
