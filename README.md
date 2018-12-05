@@ -24,6 +24,15 @@ tracker.track(detections)
 
 # get list of active tracks 
 tracks = tracker.get_tracks()
+
+# get track as a dict
+tracks[0].to_dict()
+
+{'track_id': 'aab1fb',
+ 'box': array([659. , 450. , 757. , 735.6]),
+ 'score': 1.0,
+ 'status': 1,
+ 'frames': 99} 
 ````
 
 ## Trackers
@@ -46,6 +55,10 @@ from tracking.sort import SortTracker
 tracker = SortTracker()
 
 ````
+
+Sample image below (yellow denotes new track)
+
+![tracker comparison sample](sample.png)
 
 ## LICENSE
 
