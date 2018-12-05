@@ -1,12 +1,12 @@
 from filterpy.kalman import KalmanFilter
 import numpy as np
 
-
 from .linear_assignment_ import linear_assignment
-
 from .box_utils import calc_iou
 from .base import Tracker, Track
 
+import logging
+logger = logging.getLogger()
 
 def convert_bbox_to_z(bbox):
     """
@@ -160,14 +160,18 @@ class SortTracker(Tracker):
     
     """
 
-    def __init__(self,max_age=1,min_hits=3):
+    def __init__(self,max_age=1,min_hits=3, iou_threshold=0.3, score_threshold=0.3):
         """Initialize SORT tracker. 
         Args:
             max_age: int, number of frames before finishing tracks
             min_hits: int, number of frames before activating tracks
+            iou_threshold: float, [0 - 1], min threshold for matching tracks
+            score_threshold: float, [0 - 1], min threshold for detections
         """
         self.max_age = max_age
         self.min_hits = min_hits
+        self.iou_threshold = iou_threshold
+        self.score_threshold = score_threshold
         self.tracks = []
         self.frame_count = 0
 
@@ -181,18 +185,28 @@ class SortTracker(Tracker):
         self.frame_count += 1
         tracks = self.get_tracks()
 
-        predicted_pos = np.asarray([t.predict()[0] for t in tracks])
-        predicted_pos = np.reshape(predicted_pos, [len(tracks), 4])
-        predicted_pos = np.ma.compress_rows(np.ma.masked_invalid(predicted_pos))
-        det_pos = np.asarray([d.get_box_xyxy() for d in detections])
+        # counters for debugging
+        s_new = 0
+        s_active = 0
+        s_finish = 0
+
+        # get tracking and detection features: [x1, y1, x2, y2]
+        track_feats = np.asarray([t.predict()[0] for t in tracks])
+        track_feats = np.reshape(track_feats, [len(tracks), 4])
+        track_feats = np.ma.compress_rows(np.ma.masked_invalid(track_feats))
+
+        # TODO: filter detections with score_threshold
+        det_feats = np.asarray([d.get_box_xyxy() for d in detections])
+
+        # match detections to tracks
+        matched, unmatched_dets, unmatched_trks = associate_detections_to_tracks(
+            det_feats, track_feats, iou_threshold=self.iou_threshold)
+        logger.debug("[%d] tracks: %d, matched: %s, unmatched_dets: %s, unmatched_trks: %s" % (self.frame_count, len(tracks), matched.shape, unmatched_dets.shape, unmatched_trks.shape))
 
         # remove tracks that have nan predictions
-        invalid_pos = np.any(np.isnan(predicted_pos), axis=1)
+        invalid_pos = np.any(np.isnan(track_feats), axis=1)
         if len(invalid_pos) > 0:
             tracks = tracks[~invalid_pos]
-
-        matched, unmatched_dets, unmatched_trks = associate_detections_to_tracks(
-            det_pos, predicted_pos)
 
         # update matched trackers with assigned detections
         for t, track in enumerate(tracks):
@@ -204,13 +218,17 @@ class SortTracker(Tracker):
         for i in unmatched_dets:
             track = KalmanTrack(detections[i])
             tracks = np.append(tracks, [track])
-        
+            s_new += 1
+
         for t in tracks:
             d = track.get_state()[0]
             if((t.time_since_update < 1) and (t.hit_streak >= self.min_hits or self.frame_count <= self.min_hits)):
                 t.active()
+                s_active += 1
             if(t.time_since_update > self.max_age):
                 t.finish()
+                s_finish += 1
 
+        logger.debug("    [stats] new: %d, active: %d, finish: %d" % (s_new, s_active, s_finish))
         self.tracks = tracks
         return self.tracks

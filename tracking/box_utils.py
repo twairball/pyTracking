@@ -22,13 +22,13 @@ def calc_iou(box1, box2):
     x2 = np.minimum(box1[2], box2[2])
     y2 = np.minimum(box1[3], box2[3])
 
-    if x1 <= x2 or y1 <= y2:
+    if x2 <= x1 or y2 <= y1:
         return 0.
 
     intersect = (x2 - x1) * (y2 - y1)
-    box1_size = (box1[2]-box1[0])*(box1[3]-box1[0])
-    box2_size = (box2[2]-box2[0])*(box2[3]-box2[0])
-    iou = intersect / (box1_size + box2_size + intersect)
+    box1_size = (box1[2]-box1[0])*(box1[3]-box1[1])
+    box2_size = (box2[2]-box2[0])*(box2[3]-box2[1])
+    iou = intersect / (box1_size + box2_size - intersect)
     return iou
 
 
